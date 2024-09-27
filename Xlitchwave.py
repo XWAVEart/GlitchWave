@@ -1,13 +1,15 @@
 import os
-from PIL import Image
-import colorsys  # For hue calculations
+import io
+import cv2
+import math
+import noise
 import random
 import numpy as np
-import io
-import math
-from scipy.spatial import cKDTree
+from PIL import Image
 from collections import deque
-import noise
+from scipy.spatial import cKDTree
+import colorsys  # For hue calculations
+
 
 def load_image(file_path):
     """
@@ -64,8 +66,9 @@ def process_image():
     print("9. Concentric Shapes")
     print("10. Color Shift Expansion")
     print("11. Perlin Noise Displacement")
+    print("12. Spiral Pixel Sort") 
 
-    choice = input("Pick yer Poison (1-11): ")
+    choice = input("which Xlitch? (1-12): ")
 
     if choice == '1':
         # Pixel Sorting (Original)
@@ -384,6 +387,52 @@ def process_image():
         effect = "perlin-noise-displacement"
         settings = f"scale_{scale}_intensity_{intensity}_octaves_{octaves}_persistence_{persistence}_lacunarity_{lacunarity}"
 
+    # ... (other choices)
+    elif choice == '12':
+        # Spiral Pixel Sort (New Function 12)
+        print("\nSpiral Pixel Sort will sort pixels within each chunk in a spiral order based on luminance.")
+
+        try:
+            # Chunk Size Input
+            chunk_size_input = input("Enter the chunk size (e.g., 64): ")
+            chunk_size = int(chunk_size_input)
+            if chunk_size <= 0:
+                raise ValueError("Chunk size must be a positive integer.")
+        except ValueError as ve:
+            print(f"Invalid chunk size value: {ve}")
+            return
+
+        # Sorting Order Selection
+        print("\nChoose sorting order based on luminance:")
+        print("1. Darkest to Lightest")
+        print("2. Lightest to Darkest")
+        order_choice = input("Enter your choice (1-2): ")
+
+        if order_choice == '1':
+            order = 'darkest-to-lightest'
+        elif order_choice == '2':
+            order = 'lightest-to-darkest'
+        else:
+            print("Invalid sorting order choice. Defaulting to 'lightest-to-darkest'.")
+            order = 'lightest-to-darkest'
+
+        # Apply Spiral Pixel Sort Effect
+        sorted_image = sort_pixels_in_spiral(
+            image_path=file_path,
+            chunk_size=chunk_size,
+            order=order
+        )
+
+        if sorted_image is None:
+            print("Spiral Pixel Sort failed due to an error.")
+            return
+
+        # Convert the NumPy array to PIL Image
+        processed_image = Image.fromarray(sorted_image)
+
+        effect = "spiral-pixel-sort"
+        settings = f"chunk_size_{chunk_size}_order_{order}"
+
     else:
         print("Invalid choice.")
         return
@@ -394,6 +443,9 @@ def process_image():
 
     output_filename = generate_output_filename(file_path, effect, settings)
     save_image(processed_image, output_filename)
+    
+# FUNCTIONS
+# FUNCTIONS
 
 def pixel_sorting(image, direction, chunk_width, chunk_height, sort_by):
     """
@@ -1299,6 +1351,124 @@ def perlin_noise_displacement(image, scale=100, intensity=30, octaves=6, persist
     displaced_image = image_np[src_y, src_x]
 
     return Image.fromarray(displaced_image)
+
+def spiral_coords(n):
+    """
+    Generates spiral coordinates for an n x n matrix in spiral order.
+
+    :param n: Size of the square matrix.
+    :return: List of (row, col) tuples in spiral order.
+    """
+    coords = []
+    left, right = 0, n - 1
+    top, bottom = 0, n - 1
+
+    while left <= right and top <= bottom:
+        # Traverse from left to right
+        for col in range(left, right + 1):
+            coords.append((top, col))
+        top += 1
+
+        # Traverse downwards
+        for row in range(top, bottom + 1):
+            coords.append((row, right))
+        right -= 1
+
+        if top <= bottom:
+            # Traverse from right to left
+            for col in range(right, left - 1, -1):
+                coords.append((bottom, col))
+            bottom -= 1
+
+        if left <= right:
+            # Traverse upwards
+            for row in range(bottom, top - 1, -1):
+                coords.append((row, left))
+            left += 1
+
+    return coords
+
+def sort_pixels_in_spiral(image_path, chunk_size, order):
+    """
+    Applies a spiral pixel sort effect to an image.
+
+    :param image_path: Path to the input image.
+    :param chunk_size: Size of the square chunks to divide the image into.
+    :param order: Sorting order based on luminance ('darkest-to-lightest' or 'lightest-to-darkest').
+    :return: Sorted image as a NumPy array.
+    """
+    # Load the image
+    image = cv2.imread(image_path)
+
+    if image is None:
+        print(f"Error: Unable to load image at {image_path}")
+        return None
+
+    # Get image dimensions
+    height, width, channels = image.shape
+
+    # Calculate number of chunks along height and width
+    num_chunks_y = height // chunk_size
+    num_chunks_x = width // chunk_size
+
+    # Pad the image if necessary to make it divisible by chunk_size
+    pad_y = (chunk_size - (height % chunk_size)) % chunk_size
+    pad_x = (chunk_size - (width % chunk_size)) % chunk_size
+
+    if pad_y != 0 or pad_x != 0:
+        image = cv2.copyMakeBorder(image, 0, pad_y, 0, pad_x, cv2.BORDER_REPLICATE)
+        height, width, channels = image.shape
+        num_chunks_y = height // chunk_size
+        num_chunks_x = width // chunk_size
+
+    # Split the image into chunks
+    chunks = []
+    for y in range(num_chunks_y):
+        for x in range(num_chunks_x):
+            chunk = image[y*chunk_size:(y+1)*chunk_size, x*chunk_size:(x+1)*chunk_size]
+            chunks.append(chunk)
+
+    # Generate spiral coordinates
+    spiral_order = spiral_coords(chunk_size)
+    total_pixels = chunk_size * chunk_size
+
+    # Sort each chunk
+    sorted_chunks = []
+    for chunk in chunks:
+        # Flatten the chunk and sort based on luminance
+        flattened_chunk = chunk.reshape(-1, channels)
+        luminance = np.mean(flattened_chunk, axis=1)
+        sorted_indices = np.argsort(luminance)
+
+        if order == 'darkest-to-lightest':
+            sorted_indices = sorted_indices[::-1]
+        elif order != 'lightest-to-darkest':
+            print(f"Warning: Unknown order '{order}'. Defaulting to 'lightest-to-darkest'.")
+            order = 'lightest-to-darkest'
+
+        # Assign sorted pixels to spiral coordinates
+        sorted_chunk = np.zeros_like(chunk)
+        for idx, (row, col) in zip(sorted_indices[:total_pixels], spiral_order):
+            sorted_chunk[row, col] = flattened_chunk[idx]
+
+        sorted_chunks.append(sorted_chunk)
+
+    # Combine sorted chunks back into the image
+    sorted_image = np.zeros_like(image)
+    chunk_idx = 0
+    for y in range(num_chunks_y):
+        for x in range(num_chunks_x):
+            sorted_image[y*chunk_size:(y+1)*chunk_size, x*chunk_size:(x+1)*chunk_size] = sorted_chunks[chunk_idx]
+            chunk_idx += 1
+
+    # Remove padding if it was added
+    if pad_y != 0 or pad_x != 0:
+        sorted_image = sorted_image[:height - pad_y, :width - pad_x]
+
+    # Convert BGR to RGB
+    sorted_image = cv2.cvtColor(sorted_image, cv2.COLOR_BGR2RGB)
+
+    return sorted_image
 
 if __name__ == "__main__":
     process_image()
