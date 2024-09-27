@@ -9,7 +9,7 @@ from PIL import Image
 from collections import deque
 from scipy.spatial import cKDTree
 import colorsys  # For hue calculations
-
+import hashlib  # For filename hashing
 
 def load_image(file_path):
     """
@@ -26,14 +26,35 @@ def load_image(file_path):
         print(f"Error loading image: {e}")
         return None
 
-def generate_output_filename(original_path, effect, settings):
+def generate_output_filename(original_path, effects_applied, max_filename_length=255):
     """
-    Generates a filename for the output image based on the original filename, the effect applied, and settings.
+    Generates a filename for the output image based on the original filename and the effects applied.
+    If the filename is too long, it is shortened and a hash of the effects is appended.
     """
     base_name, extension = os.path.splitext(os.path.basename(original_path))
     directory = os.path.dirname(original_path)
-    new_filename = f"{base_name}_{effect}_{settings}{extension}"
-    return os.path.join(directory, new_filename)
+
+    # Build the effects string
+    effects_str = '_'.join([f"{effect}_{settings}" for effect, settings in effects_applied])
+
+    # Build the new filename
+    new_filename = f"{base_name}_{effects_str}{extension}"
+    full_path = os.path.join(directory, new_filename)
+
+    # If the full path is too long, shorten the effects string
+    max_full_path_length = max_filename_length
+    if len(full_path) > max_full_path_length:
+        # Compute a hash of the effects string
+        effects_hash = hashlib.md5(effects_str.encode('utf-8')).hexdigest()[:8]
+        # Calculate allowed length for effects string
+        allowed_effects_length = max_full_path_length - len(directory) - len(base_name) - len(effects_hash) - len(extension) - 3  # for underscores
+        if allowed_effects_length < 0:
+            allowed_effects_length = 0
+        truncated_effects_str = effects_str[:allowed_effects_length]
+        new_filename = f"{base_name}_{truncated_effects_str}_{effects_hash}{extension}"
+        full_path = os.path.join(directory, new_filename)
+
+    return full_path
 
 def save_image(image, output_path):
     """
@@ -54,397 +75,458 @@ def process_image():
     if image is None:
         return
 
-    print("Choose an effect:")
-    print("1. Pixel Sorting (Original)")
-    print("2. Pixel Sorting (Corner-to-Corner)")
-    print("3. Color Channel Manipulation")
-    print("4. Data Moshing")
-    print("5. Pixel Drift")
-    print("6. Bit Manipulation")
-    print("7. Glitch Effect")
-    print("8. Voronoi Pixel Sort")
-    print("9. Concentric Shapes")
-    print("10. Color Shift Expansion")
-    print("11. Perlin Noise Displacement")
-    print("12. Spiral Pixel Sort") 
+    # Keep track of the effects applied and settings for filename generation
+    effects_applied = []
 
-    choice = input("which Xlitch? (1-12): ")
+    while True:
+        print("\nChoose an effect:")
+        print("1. Pixel Sorting (Original)")
+        print("2. Pixel Sorting (Corner-to-Corner)")
+        print("3. Color Channel Manipulation")
+        print("4. Data Moshing")
+        print("5. Pixel Drift")
+        print("6. Bit Manipulation")
+        print("7. Glitch Effect")
+        print("8. Voronoi Pixel Sort")
+        print("9. Concentric Shapes")
+        print("10. Color Shift Expansion")
+        print("11. Perlin Noise Displacement")
+        print("12. Spiral Pixel Sort")
+        print("Q. Quit")
 
-    if choice == '1':
-        # Pixel Sorting (Original)
-        print("Choose direction:")
-        print("1. Horizontal")
-        print("2. Vertical")
-        dir_choice = input("Enter your choice (1-2): ")
-        if dir_choice not in ['1', '2']:
-            print("Invalid direction choice.")
-            return
-        direction = "horizontal" if dir_choice == '1' else "vertical"
+        choice = input("Which Xlitch? (1-12 or Q to quit): ")
 
-        print("Choose sorting property:")
-        print("1. Color")
-        print("2. Brightness")
-        print("3. Hue")
-        sort_choice = input("Enter your choice (1-3): ")
-        if sort_choice not in ['1', '2', '3']:
-            print("Invalid sorting property choice.")
-            return
-        sort_property = {
-            '1': 'color',
-            '2': 'brightness',
-            '3': 'hue'
-        }[sort_choice]
+        if choice.lower() == 'q':
+            # Save the current image before quitting
+            if effects_applied:
+                output_filename = generate_output_filename(file_path, effects_applied)
+                save_image(image, output_filename)
+            print("Exiting.")
+            break
 
-        chunk_size = input("Enter chunk size (width x height, e.g., 32x32): ")
-        try:
-            chunk_width, chunk_height = map(int, chunk_size.lower().split('x'))
-        except ValueError:
-            print("Invalid chunk size format.")
-            return
+        processed_image = None  # Initialize processed_image for each loop
+        effect = ""
+        settings = ""
 
-        processed_image = pixel_sorting(image, direction, chunk_width, chunk_height, sort_property)
-        effect = "pixel-sort"
-        settings = f"{direction}_{chunk_width}x{chunk_height}_{sort_property}"
+        if choice == '1':
+            # Pixel Sorting (Original)
+            print("Choose direction:")
+            print("1. Horizontal")
+            print("2. Vertical")
+            dir_choice = input("Enter your choice (1-2): ")
+            if dir_choice not in ['1', '2']:
+                print("Invalid direction choice.")
+                continue
+            direction = "horizontal" if dir_choice == '1' else "vertical"
 
-    elif choice == '2':
-        # Pixel Sorting (Corner-to-Corner)
-        print("Choose sorting property for Corner-to-Corner Sorting:")
-        print("1. Color")
-        print("2. Brightness")
-        print("3. Hue")
-        sort_choice = input("Enter your choice (1-3): ")
-        if sort_choice not in ['1', '2', '3']:
-            print("Invalid sorting property choice.")
-            return
-        sort_property = {
-            '1': 'color',
-            '2': 'brightness',
-            '3': 'hue'
-        }[sort_choice]
-
-        chunk_size = input("Enter chunk size for Corner-to-Corner Sorting (width x height, e.g., 32x32): ")
-        try:
-            chunk_width, chunk_height = map(int, chunk_size.lower().split('x'))
-        except ValueError:
-            print("Invalid chunk size format.")
-            return
-
-        print("Choose the corner to start sorting from:")
-        print("1. Top-Left")
-        print("2. Top-Right")
-        print("3. Bottom-Left")
-        print("4. Bottom-Right")
-        corner_choice = input("Enter your choice (1-4): ")
-        corner_dict = {
-            '1': 'top-left',
-            '2': 'top-right',
-            '3': 'bottom-left',
-            '4': 'bottom-right'
-        }
-        if corner_choice not in corner_dict:
-            print("Invalid corner choice.")
-            return
-        corner = corner_dict[corner_choice]
-
-        print("Choose sorting direction for Corner-to-Corner Sorting:")
-        print("1. Horizontal")
-        print("2. Vertical")
-        direction_choice = input("Enter your choice (1-2): ")
-        if direction_choice not in ['1', '2']:
-            print("Invalid sorting direction choice.")
-            return
-        horizontal = direction_choice == '1'
-
-        processed_image = pixel_sorting_corner_to_corner(image, chunk_width, chunk_height, sort_property, corner, horizontal)
-        effect = "corner-to-corner-sort"
-        settings = f"{sort_property}_{chunk_width}x{chunk_height}_{corner}_{'horizontal' if horizontal else 'vertical'}"
-
-    elif choice == '3':
-        # Color Channel Manipulation
-        processed_image, manipulation_description = color_channel_manipulation(image)
-        effect = "color-channel-manipulation"
-        settings = manipulation_description
-
-    elif choice == '4':
-        # Data Moshing (Function 4)
-        print("Data Moshing will aggressively scramble the image data to create glitch effects.")
-
-        try:
-            # Intensity Input
-            intensity_input = input("Enter the intensity of the effect (e.g., 10 for moderate, 20 for high): ")
-            intensity = int(intensity_input)
-            if intensity <= 0:
-                raise ValueError("Intensity must be a positive integer.")
-        except ValueError as ve:
-            print(f"Invalid intensity value: {ve}")
-            return
-
-        # Movement Mode Selection
-        print("\nChoose movement mode:")
-        print("1. Swap Blocks (Move to New Positions)")
-        print("2. Manipulate Blocks In-Place (No Movement)")
-        movement_choice = input("Enter your choice (1-2): ")
-
-        if movement_choice == '1':
-            movement_mode = 'swap'
-        elif movement_choice == '2':
-            movement_mode = 'in_place'
-        else:
-            print("Invalid movement mode choice. Defaulting to 'Swap Blocks'.")
-            movement_mode = 'swap'
-
-        # Color Swap Mode Selection
-        print("\nChoose color swap mode:")
-        print("1. No Swap")
-        print("2. Swap All Colors on Blocks")
-        print("3. Randomly Swap Colors on Blocks")
-        color_swap_choice = input("Enter your choice (1-3): ")
-
-        color_swap_mode = 'random_swap'  # Default
-
-        if color_swap_choice == '1':
-            color_swap_mode = 'no_swap'
-        elif color_swap_choice == '2':
-            color_swap_mode = 'swap_all'
-        elif color_swap_choice == '3':
-            color_swap_mode = 'random_swap'
-        else:
-            print("Invalid color swap choice. Defaulting to 'Randomly Swap Colors on Blocks'.")
-            color_swap_mode = 'random_swap'
-
-        # Block Flip Mode Selection
-        print("\nChoose block flip mode:")
-        print("1. Do Not Flip Blocks")
-        print("2. Flip Blocks Vertically")
-        print("3. Flip Blocks Horizontally")
-        print("4. Flip Blocks Randomly Vertically or Horizontally")
-        block_flip_choice = input("Enter your choice (1-4): ")
-
-        block_flip_mode = 'flip_random'  # Default
-
-        if block_flip_choice == '1':
-            block_flip_mode = 'no_flip'
-        elif block_flip_choice == '2':
-            block_flip_mode = 'flip_vertical'
-        elif block_flip_choice == '3':
-            block_flip_mode = 'flip_horizontal'
-        elif block_flip_choice == '4':
-            block_flip_mode = 'flip_random'
-        else:
-            print("Invalid block flip choice. Defaulting to 'Flip Blocks Randomly Vertically or Horizontally'.")
-            block_flip_mode = 'flip_random'
-
-        # Apply Data Moshing Effect
-        processed_image = data_moshing(
-            image,
-            intensity=intensity,
-            movement_mode=movement_mode,
-            color_swap_mode=color_swap_mode,
-            block_flip_mode=block_flip_mode
-        )
-        effect = "data-mosh"
-        settings = f"block-move_{movement_mode}_intensity_{intensity}_color_swap_{color_swap_mode}_block_flip_{block_flip_mode}"
-
-    elif choice == '5':
-        # Pixel Drift
-        direction = input("Enter drift direction (up/down/left/right): ").lower()
-        if direction not in ['up', 'down', 'left', 'right']:
-            print("Invalid drift direction.")
-            return
-        try:
-            max_drift = int(input("Enter maximum drift amount (e.g., 30): "))
-        except ValueError:
-            print("Invalid drift amount.")
-            return
-        processed_image = pixel_drift(image, direction, max_drift)
-        effect = "pixel-drift"
-        settings = f"{direction}_{max_drift}"
-
-    elif choice == '6':
-        # Bit Manipulation
-        processed_image = bit_manipulation(image)
-        effect = "bit-manipulation"
-        settings = "invert-bits"
-
-    elif choice == '7':
-        # Glitch Effect
-        print("Applying glitch effect to the image.")
-        try:
-            max_thickness = int(input("Enter the maximum thickness of glitch lines (e.g., 10): "))
-        except ValueError:
-            print("Invalid thickness value.")
-            return
-        processed_image = glitch_image(image, max_thickness)
-        effect = "glitch-effect"
-        settings = f"pixel-shift_{max_thickness}"
-
-    elif choice == '8':
-        # Voronoi Pixel Sort
-        print("Applying Voronoi Pixel Sort effect to the image.")
-        try:
-            num_cells = int(input("Enter the approximate number of Voronoi cells (e.g., 100): "))
-            size_variation = float(input("Enter the size variation (0 to 1, e.g., 0.5): "))
             print("Choose sorting property:")
             print("1. Color")
             print("2. Brightness")
             print("3. Hue")
             sort_choice = input("Enter your choice (1-3): ")
+            if sort_choice not in ['1', '2', '3']:
+                print("Invalid sorting property choice.")
+                continue
+            sort_property = {
+                '1': 'color',
+                '2': 'brightness',
+                '3': 'hue'
+            }[sort_choice]
+
+            chunk_size = input("Enter chunk size (width x height, e.g., 32x32): ")
+            try:
+                chunk_width, chunk_height = map(int, chunk_size.lower().split('x'))
+            except ValueError:
+                print("Invalid chunk size format.")
+                continue
+
+            processed_image = pixel_sorting(image, direction, chunk_width, chunk_height, sort_property)
+            effect = "pixel-sort"
+            settings = f"{direction}_{chunk_width}x{chunk_height}_{sort_property}"
+
+        elif choice == '2':
+            # Pixel Sorting (Corner-to-Corner)
+            print("Choose sorting property for Corner-to-Corner Sorting:")
+            print("1. Color")
+            print("2. Brightness")
+            print("3. Hue")
+            sort_choice = input("Enter your choice (1-3): ")
+            if sort_choice not in ['1', '2', '3']:
+                print("Invalid sorting property choice.")
+                continue
+            sort_property = {
+                '1': 'color',
+                '2': 'brightness',
+                '3': 'hue'
+            }[sort_choice]
+
+            chunk_size = input("Enter chunk size for Corner-to-Corner Sorting (width x height, e.g., 32x32): ")
+            try:
+                chunk_width, chunk_height = map(int, chunk_size.lower().split('x'))
+            except ValueError:
+                print("Invalid chunk size format.")
+                continue
+
+            print("Choose the corner to start sorting from:")
+            print("1. Top-Left")
+            print("2. Top-Right")
+            print("3. Bottom-Left")
+            print("4. Bottom-Right")
+            corner_choice = input("Enter your choice (1-4): ")
+            corner_dict = {
+                '1': 'top-left',
+                '2': 'top-right',
+                '3': 'bottom-left',
+                '4': 'bottom-right'
+            }
+            if corner_choice not in corner_dict:
+                print("Invalid corner choice.")
+                continue
+            corner = corner_dict[corner_choice]
+
+            print("Choose sorting direction for Corner-to-Corner Sorting:")
+            print("1. Horizontal")
+            print("2. Vertical")
+            direction_choice = input("Enter your choice (1-2): ")
+            if direction_choice not in ['1', '2']:
+                print("Invalid sorting direction choice.")
+                continue
+            horizontal = direction_choice == '1'
+
+            processed_image = pixel_sorting_corner_to_corner(image, f"{chunk_width}x{chunk_height}", sort_property, corner, horizontal)
+            effect = "corner-to-corner-sort"
+            settings = f"{sort_property}_{chunk_width}x{chunk_height}_{corner}_{'horizontal' if horizontal else 'vertical'}"
+
+        elif choice == '3':
+            # Color Channel Manipulation
+            processed_image, manipulation_description = color_channel_manipulation(image)
+            effect = "color-channel-manipulation"
+            settings = manipulation_description
+
+        elif choice == '4':
+            # Data Moshing
+            print("Data Moshing will aggressively scramble the image data to create glitch effects.")
+
+            try:
+                # Intensity Input
+                intensity_input = input("Enter the intensity of the effect (e.g., 10 for moderate, 20 for high): ")
+                intensity = int(intensity_input)
+                if intensity <= 0:
+                    raise ValueError("Intensity must be a positive integer.")
+            except ValueError as ve:
+                print(f"Invalid intensity value: {ve}")
+                continue
+
+            # Movement Mode Selection
+            print("\nChoose movement mode:")
+            print("1. Swap Blocks (Move to New Positions)")
+            print("2. Manipulate Blocks In-Place (No Movement)")
+            movement_choice = input("Enter your choice (1-2): ")
+
+            if movement_choice == '1':
+                movement_mode = 'swap'
+            elif movement_choice == '2':
+                movement_mode = 'in_place'
+            else:
+                print("Invalid movement mode choice. Defaulting to 'Swap Blocks'.")
+                movement_mode = 'swap'
+
+            # Color Swap Mode Selection
+            print("\nChoose color swap mode:")
+            print("1. No Swap")
+            print("2. Swap All Colors on Blocks")
+            print("3. Randomly Swap Colors on Blocks")
+            color_swap_choice = input("Enter your choice (1-3): ")
+
+            color_swap_mode = 'random_swap'  # Default
+
+            if color_swap_choice == '1':
+                color_swap_mode = 'no_swap'
+            elif color_swap_choice == '2':
+                color_swap_mode = 'swap_all'
+            elif color_swap_choice == '3':
+                color_swap_mode = 'random_swap'
+            else:
+                print("Invalid color swap choice. Defaulting to 'Randomly Swap Colors on Blocks'.")
+                color_swap_mode = 'random_swap'
+
+            # Block Flip Mode Selection
+            print("\nChoose block flip mode:")
+            print("1. Do Not Flip Blocks")
+            print("2. Flip Blocks Vertically")
+            print("3. Flip Blocks Horizontally")
+            print("4. Flip Blocks Randomly Vertically or Horizontally")
+            block_flip_choice = input("Enter your choice (1-4): ")
+
+            block_flip_mode = 'flip_random'  # Default
+
+            if block_flip_choice == '1':
+                block_flip_mode = 'no_flip'
+            elif block_flip_choice == '2':
+                block_flip_mode = 'flip_vertical'
+            elif block_flip_choice == '3':
+                block_flip_mode = 'flip_horizontal'
+            elif block_flip_choice == '4':
+                block_flip_mode = 'flip_random'
+            else:
+                print("Invalid block flip choice. Defaulting to 'Flip Blocks Randomly Vertically or Horizontally'.")
+                block_flip_mode = 'flip_random'
+
+            # Apply Data Moshing Effect
+            processed_image = data_moshing(
+                image,
+                intensity=intensity,
+                movement_mode=movement_mode,
+                color_swap_mode=color_swap_mode,
+                block_flip_mode=block_flip_mode
+            )
+            effect = "data-mosh"
+            settings = f"block-move_{movement_mode}_intensity_{intensity}_color_swap_{color_swap_mode}_block_flip_{block_flip_mode}"
+
+        elif choice == '5':
+            # Pixel Drift
+            direction = input("Enter drift direction (up/down/left/right): ").lower()
+            if direction not in ['up', 'down', 'left', 'right']:
+                print("Invalid drift direction.")
+                continue
+            try:
+                max_drift = int(input("Enter maximum drift amount (e.g., 30): "))
+            except ValueError:
+                print("Invalid drift amount.")
+                continue
+            processed_image = pixel_drift(image, direction, max_drift)
+            effect = "pixel-drift"
+            settings = f"{direction}_{max_drift}"
+
+        elif choice == '6':
+            # Bit Manipulation
+            processed_image = bit_manipulation(image)
+            effect = "bit-manipulation"
+            settings = "invert-bits"
+
+        elif choice == '7':
+            # Glitch Effect
+            print("Applying glitch effect to the image.")
+            try:
+                max_thickness = int(input("Enter the maximum thickness of glitch lines (e.g., 10): "))
+            except ValueError:
+                print("Invalid thickness value.")
+                continue
+            processed_image = glitch_image(image, max_thickness)
+            effect = "glitch-effect"
+            settings = f"pixel-shift_{max_thickness}"
+
+        elif choice == '8':
+            # Voronoi Pixel Sort
+            print("Applying Voronoi Pixel Sort effect to the image.")
+            try:
+                num_cells = int(input("Enter the approximate number of Voronoi cells (e.g., 100): "))
+                size_variation = float(input("Enter the size variation (0 to 1, e.g., 0.5): "))
+                print("Choose sorting property:")
+                print("1. Color")
+                print("2. Brightness")
+                print("3. Hue")
+                sort_choice = input("Enter your choice (1-3): ")
+                sort_by = {
+                    '1': 'color',
+                    '2': 'brightness',
+                    '3': 'hue'
+                }.get(sort_choice, 'color')
+                print("Choose sorting order:")
+                print("1. Clockwise")
+                print("2. Counter-Clockwise")
+                order_choice = input("Enter your choice (1-2): ")
+                sort_order = 'clockwise' if order_choice == '1' else 'counter-clockwise'
+            except ValueError:
+                print("Invalid input.")
+                continue
+            processed_image = voronoi_pixel_sort(image, num_cells, size_variation, sort_by, sort_order)
+            effect = "voronoi-pixel-sort"
+            settings = f"{num_cells}_cells_{sort_by}_{sort_order}_variation_{size_variation}"
+
+        elif choice == '9':
+            # Concentric Shapes
+            print("Generating concentric shapes from random points.")
+            try:
+                num_points = int(input("Enter the number of points (e.g., 5): "))
+                print("Choose shape type:")
+                print("1. Circle")
+                print("2. Square")
+                print("3. Triangle")
+                print("4. Hexagon")
+                shape_choice = input("Enter your choice (1-4): ")
+                shape_type = {
+                    '1': 'circle',
+                    '2': 'square',
+                    '3': 'triangle',
+                    '4': 'hexagon'
+                }.get(shape_choice, 'circle')
+                thickness = int(input("Enter the thickness of shapes in pixels (e.g., 3): "))
+                spacing = int(input("Enter the spacing between shapes in pixels (e.g., 10): "))
+                rotation_angle = float(input("Enter the incremental rotation angle per shape in degrees (e.g., 0 for no rotation): "))
+                darken_step = int(input("Enter the amount to darken each shape (0-255, e.g., 0 for no change): "))
+                color_shift = float(input("Enter the amount to shift color hue per shape (0-360 degrees, e.g., 0 for no change): "))
+            except ValueError:
+                print("Invalid input.")
+                continue
+            processed_image = concentric_shapes(image, num_points, shape_type, thickness,
+                                                spacing, rotation_angle, darken_step, color_shift)
+            effect = "concentric-shapes"
+            settings = f"{num_points}_points_{shape_type}_thickness_{thickness}_spacing_{spacing}_rotation_{rotation_angle}_darken_{darken_step}_color_shift_{color_shift}"
+
+        elif choice == '10':
+            # Color Shift Expansion
+            print("Applying color shift expansion from seed points.")
+            try:
+                num_points = int(input("Enter the number of seed points (e.g., 5): "))
+                shift_amount = float(input("Enter the hue shift amount per unit distance (e.g., 5): "))
+                print("Choose expansion type:")
+                print("1. Square Expansion (includes diagonals)")
+                print("2. Cross Expansion (excludes diagonals)")
+                print("3. Circular Expansion (Euclidean distance)")
+                pattern_choice = input("Enter your choice (1-3): ")
+                if pattern_choice == '1':
+                    expansion_type = 'square'
+                elif pattern_choice == '2':
+                    expansion_type = 'cross'
+                elif pattern_choice == '3':
+                    expansion_type = 'circular'
+                else:
+                    print("Invalid choice. Defaulting to Square Expansion.")
+                    expansion_type = 'square'
+            except ValueError:
+                print("Invalid input.")
+                continue
+            processed_image = color_shift_expansion(image, num_points, shift_amount, expansion_type)
+            effect = "color-shift-expansion"
+            settings = f"{num_points}_points_shift_{shift_amount}_{expansion_type}"
+
+        elif choice == '11':
+            # Perlin Noise Displacement
+            print("Applying Perlin Noise Displacement to the image.")
+            try:
+                scale = float(input("Enter the scale of the Perlin noise (e.g., 100): "))
+                intensity = float(input("Enter the intensity of the displacement (e.g., 30): "))
+                octaves = int(input("Enter the number of octaves (e.g., 6): "))
+                persistence = float(input("Enter the persistence value (e.g., 0.5): "))
+                lacunarity = float(input("Enter the lacunarity value (e.g., 2.0): "))
+            except ValueError:
+                print("Invalid input. Please enter numerical values.")
+                continue
+
+            processed_image = perlin_noise_displacement(
+                image,
+                scale=scale,
+                intensity=intensity,
+                octaves=octaves,
+                persistence=persistence,
+                lacunarity=lacunarity
+            )
+            effect = "perlin-noise-displacement"
+            settings = f"scale_{scale}_intensity_{intensity}_octaves_{octaves}_persistence_{persistence}_lacunarity_{lacunarity}"
+
+        elif choice == '12':
+            # Spiral Pixel Sort
+            print("\nSpiral Pixel Sort will sort pixels within each chunk in a spiral order based on a selected property.")
+
+            try:
+                # Chunk Size Input
+                chunk_size_input = input("Enter the chunk size (e.g., 64): ")
+                chunk_size = int(chunk_size_input)
+                if chunk_size <= 0:
+                    raise ValueError("Chunk size must be a positive integer.")
+            except ValueError as ve:
+                print(f"Invalid chunk size value: {ve}")
+                continue
+
+            # Sorting Property Selection
+            print("\nChoose sorting property:")
+            print("1. Color")
+            print("2. Brightness")
+            print("3. Hue")
+            sort_choice = input("Enter your choice (1-3): ")
+
             sort_by = {
                 '1': 'color',
                 '2': 'brightness',
                 '3': 'hue'
-            }.get(sort_choice, 'color')
-            print("Choose sorting order:")
-            print("1. Clockwise")
-            print("2. Counter-Clockwise")
+            }.get(sort_choice, 'brightness')  # Default to 'brightness' if invalid choice
+
+            # Sorting Order Selection
+            print("\nChoose sorting order:")
+            print("1. High to Low")
+            print("2. Low to High")
             order_choice = input("Enter your choice (1-2): ")
-            sort_order = 'clockwise' if order_choice == '1' else 'counter-clockwise'
-        except ValueError:
-            print("Invalid input.")
-            return
-        processed_image = voronoi_pixel_sort(image, num_cells, size_variation, sort_by, sort_order)
-        effect = "voronoi-pixel-sort"
-        settings = f"{num_cells}_cells_{sort_by}_{sort_order}_variation_{size_variation}"
 
-    elif choice == '9':
-        # Concentric Shapes
-        print("Generating concentric shapes from random points.")
-        try:
-            num_points = int(input("Enter the number of points (e.g., 5): "))
-            print("Choose shape type:")
-            print("1. Circle")
-            print("2. Square")
-            print("3. Triangle")
-            print("4. Hexagon")
-            shape_choice = input("Enter your choice (1-4): ")
-            shape_type = {
-                '1': 'circle',
-                '2': 'square',
-                '3': 'triangle',
-                '4': 'hexagon'
-            }.get(shape_choice, 'circle')
-            thickness = int(input("Enter the thickness of shapes in pixels (e.g., 3): "))
-            spacing = int(input("Enter the spacing between shapes in pixels (e.g., 10): "))
-            rotation_angle = float(input("Enter the incremental rotation angle per shape in degrees (e.g., 0 for no rotation): "))
-            darken_step = int(input("Enter the amount to darken each shape (0-255, e.g., 0 for no change): "))
-            color_shift = float(input("Enter the amount to shift color hue per shape (0-360 degrees, e.g., 0 for no change): "))
-        except ValueError:
-            print("Invalid input.")
-            return
-        processed_image = concentric_shapes(image, num_points, shape_type, thickness,
-                                            spacing, rotation_angle, darken_step, color_shift)
-        effect = "concentric-shapes"
-        settings = f"{num_points}_points_{shape_type}_thickness_{thickness}_spacing_{spacing}_rotation_{rotation_angle}_darken_{darken_step}_color_shift_{color_shift}"
-
-    elif choice == '10':
-        # Color Shift Expansion
-        print("Applying color shift expansion from seed points.")
-        try:
-            num_points = int(input("Enter the number of seed points (e.g., 5): "))
-            shift_amount = float(input("Enter the hue shift amount per unit distance (e.g., 5): "))
-            print("Choose expansion type:")
-            print("1. Square Expansion (includes diagonals)")
-            print("2. Cross Expansion (excludes diagonals)")
-            print("3. Circular Expansion (Euclidean distance)")
-            pattern_choice = input("Enter your choice (1-3): ")
-            if pattern_choice == '1':
-                expansion_type = 'square'
-            elif pattern_choice == '2':
-                expansion_type = 'cross'
-            elif pattern_choice == '3':
-                expansion_type = 'circular'
+            if order_choice == '1':
+                order = 'high-to-low'
+            elif order_choice == '2':
+                order = 'low-to-high'
             else:
-                print("Invalid choice. Defaulting to Square Expansion.")
-                expansion_type = 'square'
-        except ValueError:
-            print("Invalid input.")
-            return
-        processed_image = color_shift_expansion(image, num_points, shift_amount, expansion_type)
-        effect = "color-shift-expansion"
-        settings = f"{num_points}_points_shift_{shift_amount}_{expansion_type}"
+                print("Invalid sorting order choice. Defaulting to 'low-to-high'.")
+                order = 'low-to-high'
 
-    elif choice == '11':
-        # Perlin Noise Displacement
-        print("Applying Perlin Noise Displacement to the image.")
-        try:
-            scale = float(input("Enter the scale of the Perlin noise (e.g., 100): "))
-            intensity = float(input("Enter the intensity of the displacement (e.g., 30): "))
-            octaves = int(input("Enter the number of octaves (e.g., 6): "))
-            persistence = float(input("Enter the persistence value (e.g., 0.5): "))
-            lacunarity = float(input("Enter the lacunarity value (e.g., 2.0): "))
-        except ValueError:
-            print("Invalid input. Please enter numerical values.")
-            return
+            # Apply Spiral Pixel Sort Effect
+            sorted_image = sort_pixels_in_spiral(
+                image_array=np.array(image),
+                chunk_size=chunk_size,
+                sort_by=sort_by,
+                order=order
+            )
 
-        processed_image = perlin_noise_displacement(
-            image,
-            scale=scale,
-            intensity=intensity,
-            octaves=octaves,
-            persistence=persistence,
-            lacunarity=lacunarity
-        )
-        effect = "perlin-noise-displacement"
-        settings = f"scale_{scale}_intensity_{intensity}_octaves_{octaves}_persistence_{persistence}_lacunarity_{lacunarity}"
+            if sorted_image is None:
+                print("Spiral Pixel Sort failed due to an error.")
+                continue
 
-    # ... (other choices)
-    elif choice == '12':
-        # Spiral Pixel Sort (New Function 12)
-        print("\nSpiral Pixel Sort will sort pixels within each chunk in a spiral order based on luminance.")
+            # Convert the NumPy array to PIL Image
+            processed_image = Image.fromarray(sorted_image)
 
-        try:
-            # Chunk Size Input
-            chunk_size_input = input("Enter the chunk size (e.g., 64): ")
-            chunk_size = int(chunk_size_input)
-            if chunk_size <= 0:
-                raise ValueError("Chunk size must be a positive integer.")
-        except ValueError as ve:
-            print(f"Invalid chunk size value: {ve}")
-            return
+            effect = "spiral-pixel-sort"
+            settings = f"chunk_size_{chunk_size}_sort_by_{sort_by}_order_{order}"
 
-        # Sorting Order Selection
-        print("\nChoose sorting order based on luminance:")
-        print("1. Darkest to Lightest")
-        print("2. Lightest to Darkest")
-        order_choice = input("Enter your choice (1-2): ")
-
-        if order_choice == '1':
-            order = 'darkest-to-lightest'
-        elif order_choice == '2':
-            order = 'lightest-to-darkest'
         else:
-            print("Invalid sorting order choice. Defaulting to 'lightest-to-darkest'.")
-            order = 'lightest-to-darkest'
+            print("Invalid choice.")
+            continue
 
-        # Apply Spiral Pixel Sort Effect
-        sorted_image = sort_pixels_in_spiral(
-            image_path=file_path,
-            chunk_size=chunk_size,
-            order=order
-        )
+        if processed_image is None:
+            print("Image processing failed.")
+            continue
 
-        if sorted_image is None:
-            print("Spiral Pixel Sort failed due to an error.")
-            return
+        # Save the processed image
+        effects_applied.append((effect, settings))
+        output_filename = generate_output_filename(file_path, effects_applied)
+        save_image(processed_image, output_filename)
 
-        # Convert the NumPy array to PIL Image
-        processed_image = Image.fromarray(sorted_image)
+        # Update the current image to the processed image
+        image = processed_image
 
-        effect = "spiral-pixel-sort"
-        settings = f"chunk_size_{chunk_size}_order_{order}"
+        # Ask the user what to do next
+        print("\nWhat would you like to do next?")
+        print("1. Apply another effect to the current image")
+        print("2. Load a new image")
+        print("Q. Quit")
 
-    else:
-        print("Invalid choice.")
-        return
+        next_action = input("Enter your choice (1-2 or Q to quit): ")
 
-    if processed_image is None:
-        print("Image processing failed.")
-        return
+        if next_action == '1':
+            # Continue the loop to apply another effect
+            continue
+        elif next_action == '2':
+            # Load a new image
+            file_path = input("Enter the path of the new image file: ")
+            image = load_image(file_path)
+            if image is None:
+                print("Failed to load image. Exiting.")
+                break
+            # Reset effects applied
+            effects_applied = []
+        elif next_action.lower() == 'q':
+            print("Exiting.")
+            break
+        else:
+            print("Invalid choice. Exiting.")
+            break
 
-    output_filename = generate_output_filename(file_path, effect, settings)
-    save_image(processed_image, output_filename)
-    
-# FUNCTIONS
 # FUNCTIONS
 
 def pixel_sorting(image, direction, chunk_width, chunk_height, sort_by):
@@ -1388,21 +1470,17 @@ def spiral_coords(n):
 
     return coords
 
-def sort_pixels_in_spiral(image_path, chunk_size, order):
+def sort_pixels_in_spiral(image_array, chunk_size, sort_by, order):
     """
     Applies a spiral pixel sort effect to an image.
 
-    :param image_path: Path to the input image.
+    :param image_array: NumPy array of the image.
     :param chunk_size: Size of the square chunks to divide the image into.
-    :param order: Sorting order based on luminance ('darkest-to-lightest' or 'lightest-to-darkest').
+    :param sort_by: Property to sort by ('color', 'brightness', 'hue').
+    :param order: Sorting order ('high-to-low' or 'low-to-high').
     :return: Sorted image as a NumPy array.
     """
-    # Load the image
-    image = cv2.imread(image_path)
-
-    if image is None:
-        print(f"Error: Unable to load image at {image_path}")
-        return None
+    image = image_array
 
     # Get image dimensions
     height, width, channels = image.shape
@@ -1416,17 +1494,31 @@ def sort_pixels_in_spiral(image_path, chunk_size, order):
     pad_x = (chunk_size - (width % chunk_size)) % chunk_size
 
     if pad_y != 0 or pad_x != 0:
-        image = cv2.copyMakeBorder(image, 0, pad_y, 0, pad_x, cv2.BORDER_REPLICATE)
+        image = np.pad(image, ((0, pad_y), (0, pad_x), (0, 0)), mode='edge')
         height, width, channels = image.shape
         num_chunks_y = height // chunk_size
         num_chunks_x = width // chunk_size
 
-    # Split the image into chunks
-    chunks = []
-    for y in range(num_chunks_y):
-        for x in range(num_chunks_x):
-            chunk = image[y*chunk_size:(y+1)*chunk_size, x*chunk_size:(x+1)*chunk_size]
-            chunks.append(chunk)
+    # Define sorting functions
+    def brightness(pixel):
+        # Calculate perceived brightness
+        return pixel[0] * 0.299 + pixel[1] * 0.587 + pixel[2] * 0.114
+
+    def hue(pixel):
+        # Convert RGB to HSV and return hue
+        r, g, b = [value / 255.0 for value in pixel[:3]]
+        h, _, _ = colorsys.rgb_to_hsv(r, g, b)
+        return h
+
+    def color_sum(pixel):
+        # Sum the RGB values, casting to int to prevent overflow
+        return int(pixel[0]) + int(pixel[1]) + int(pixel[2])
+
+    sort_function = {
+        'color': color_sum,
+        'brightness': brightness,
+        'hue': hue
+    }.get(sort_by, brightness)  # Default to brightness if invalid choice
 
     # Generate spiral coordinates
     spiral_order = spiral_coords(chunk_size)
@@ -1434,24 +1526,26 @@ def sort_pixels_in_spiral(image_path, chunk_size, order):
 
     # Sort each chunk
     sorted_chunks = []
-    for chunk in chunks:
-        # Flatten the chunk and sort based on luminance
-        flattened_chunk = chunk.reshape(-1, channels)
-        luminance = np.mean(flattened_chunk, axis=1)
-        sorted_indices = np.argsort(luminance)
+    for y in range(num_chunks_y):
+        for x in range(num_chunks_x):
+            chunk = image[y*chunk_size:(y+1)*chunk_size, x*chunk_size:(x+1)*chunk_size]
+            # Flatten the chunk and sort based on the selected property
+            flattened_chunk = chunk.reshape(-1, channels)
+            sort_values = np.array([sort_function(p) for p in flattened_chunk])
+            sorted_indices = np.argsort(sort_values)
 
-        if order == 'darkest-to-lightest':
-            sorted_indices = sorted_indices[::-1]
-        elif order != 'lightest-to-darkest':
-            print(f"Warning: Unknown order '{order}'. Defaulting to 'lightest-to-darkest'.")
-            order = 'lightest-to-darkest'
+            if order == 'high-to-low':
+                sorted_indices = sorted_indices[::-1]
+            elif order != 'low-to-high':
+                print(f"Warning: Unknown order '{order}'. Defaulting to 'low-to-high'.")
+                order = 'low-to-high'
 
-        # Assign sorted pixels to spiral coordinates
-        sorted_chunk = np.zeros_like(chunk)
-        for idx, (row, col) in zip(sorted_indices[:total_pixels], spiral_order):
-            sorted_chunk[row, col] = flattened_chunk[idx]
+            # Assign sorted pixels to spiral coordinates
+            sorted_chunk = np.zeros_like(chunk)
+            for idx, (row, col) in zip(sorted_indices[:total_pixels], spiral_order):
+                sorted_chunk[row, col] = flattened_chunk[idx]
 
-        sorted_chunks.append(sorted_chunk)
+            sorted_chunks.append(sorted_chunk)
 
     # Combine sorted chunks back into the image
     sorted_image = np.zeros_like(image)
@@ -1465,10 +1559,9 @@ def sort_pixels_in_spiral(image_path, chunk_size, order):
     if pad_y != 0 or pad_x != 0:
         sorted_image = sorted_image[:height - pad_y, :width - pad_x]
 
-    # Convert BGR to RGB
-    sorted_image = cv2.cvtColor(sorted_image, cv2.COLOR_BGR2RGB)
-
     return sorted_image
+
+## END OF FUNCTIONS
 
 if __name__ == "__main__":
     process_image()
