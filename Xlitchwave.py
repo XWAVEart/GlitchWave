@@ -299,10 +299,32 @@ def process_image():
             settings = f"{direction}_{max_drift}"
 
         elif choice == '6':
-            # Bit Manipulation
-            processed_image = bit_manipulation(image)
-            effect = "bit-manipulation"
-            settings = "invert-bits"
+            # Enhanced Bit Manipulation with Perlin Noise
+            print("Applying enhanced bit manipulation with Perlin noise to the image.")
+            try:
+                scale = float(input("Enter the scale of the Perlin noise (e.g., 100): "))
+                octaves = int(input("Enter the number of octaves (e.g., 1): "))
+                persistence = float(input("Enter the persistence value (e.g., 0.5): "))
+                lacunarity = float(input("Enter the lacunarity value (e.g., 2.0): "))
+                threshold = float(input("Enter the threshold for bit inversion (0 to 1, e.g., 0.5): "))
+            except ValueError:
+                print("Invalid input. Using default values.")
+                scale = 100
+                octaves = 1
+                persistence = 0.5
+                lacunarity = 2.0
+                threshold = 0.5
+
+            processed_image = bit_manipulation_with_perlin_noise(
+                image,
+                scale=scale,
+                octaves=octaves,
+                persistence=persistence,
+                lacunarity=lacunarity,
+                threshold=threshold
+            )
+            effect = "bit-manipulation-perlin-noise"
+            settings = f"scale_{scale}_octaves_{octaves}_persistence_{persistence}_lacunarity_{lacunarity}_threshold_{threshold}"
 
         elif choice == '7':
             # Glitch Effect
@@ -379,7 +401,7 @@ def process_image():
             print("Applying color shift expansion from seed points.")
             try:
                 num_points = int(input("Enter the number of seed points (e.g., 5): "))
-                shift_amount = float(input("Enter the hue shift amount per unit distance (e.g., 5): "))
+                shift_amount = float(input("Enter the hue shift amount per unit distance (e.g., 1.0): "))
                 print("Choose expansion type:")
                 print("1. Square Expansion (includes diagonals)")
                 print("2. Cross Expansion (excludes diagonals)")
@@ -394,12 +416,26 @@ def process_image():
                 else:
                     print("Invalid choice. Defaulting to Square Expansion.")
                     expansion_type = 'square'
+
+                # Mode Selection
+                print("\nChoose mode:")
+                print("1. Classic (Fixed hue shift)")
+                print("2. Xtreme (Hue shift increases with distance)")
+                mode_choice = input("Enter your choice (1-2): ")
+                if mode_choice == '1':
+                    mode = 'classic'
+                elif mode_choice == '2':
+                    mode = 'xtreme'
+                else:
+                    print("Invalid mode choice. Defaulting to 'classic'.")
+                    mode = 'classic'
+
+                processed_image = color_shift_expansion(image, num_points, shift_amount, expansion_type, mode)
+                effect = "color-shift-expansion"
+                settings = f"{num_points}_points_shift_{shift_amount}_{expansion_type}_{mode}"
             except ValueError:
                 print("Invalid input.")
                 continue
-            processed_image = color_shift_expansion(image, num_points, shift_amount, expansion_type)
-            effect = "color-shift-expansion"
-            settings = f"{num_points}_points_shift_{shift_amount}_{expansion_type}"
 
         elif choice == '11':
             # Perlin Noise Displacement
@@ -410,20 +446,20 @@ def process_image():
                 octaves = int(input("Enter the number of octaves (e.g., 6): "))
                 persistence = float(input("Enter the persistence value (e.g., 0.5): "))
                 lacunarity = float(input("Enter the lacunarity value (e.g., 2.0): "))
+
+                processed_image = perlin_noise_displacement(
+                    image,
+                    scale=scale,
+                    intensity=intensity,
+                    octaves=octaves,
+                    persistence=persistence,
+                    lacunarity=lacunarity
+                )
+                effect = "perlin-noise-displacement"
+                settings = f"scale_{scale}_intensity_{intensity}_octaves_{octaves}_persistence_{persistence}_lacunarity_{lacunarity}"
             except ValueError:
                 print("Invalid input. Please enter numerical values.")
                 continue
-
-            processed_image = perlin_noise_displacement(
-                image,
-                scale=scale,
-                intensity=intensity,
-                octaves=octaves,
-                persistence=persistence,
-                lacunarity=lacunarity
-            )
-            effect = "perlin-noise-displacement"
-            settings = f"scale_{scale}_intensity_{intensity}_octaves_{octaves}_persistence_{persistence}_lacunarity_{lacunarity}"
 
         elif choice == '12':
             # Spiral Pixel Sort
@@ -920,19 +956,63 @@ def pixel_drift(image, direction='down', max_drift=30):
 
     return drifted_image
 
-def bit_manipulation(image):
+def bit_manipulation_with_perlin_noise(image, scale=100, octaves=1, persistence=0.5, lacunarity=2.0, threshold=0.5):
     """
-    Manipulates the bits of the image data to create a glitch effect.
+    Manipulates the bits of the image data using Perlin noise to create a more artistic effect.
 
     :param image: The PIL Image to process.
+    :param scale: Scale of the Perlin noise.
+    :param octaves: Number of layers of noise.
+    :param persistence: Amplitude of each octave.
+    :param lacunarity: Frequency of each octave.
+    :param threshold: Threshold for bit inversion (0 to 1).
     :return: The manipulated image.
     """
-    # Convert image to bytes
-    image_bytes = bytearray(image.tobytes())
-    # Invert every other byte
-    manipulated_bytes = bytearray(b ^ 0xFF if i % 2 == 0 else b for i, b in enumerate(image_bytes))
-    # Reconstruct image from bytes
-    manipulated_image = Image.frombytes(image.mode, image.size, bytes(manipulated_bytes))
+    import numpy as np
+    import noise
+    from PIL import Image
+
+    width, height = image.size
+    image_np = np.array(image)
+
+    # Generate Perlin noise maps for inversion
+    perlin_map = np.zeros((height, width))
+    for y in range(height):
+        for x in range(width):
+            perlin_value = noise.pnoise2(
+                x / scale,
+                y / scale,
+                octaves=octaves,
+                persistence=persistence,
+                lacunarity=lacunarity,
+                repeatx=width,
+                repeaty=height,
+                base=0
+            )
+            # Normalize to [0, 1]
+            perlin_map[y, x] = perlin_value + 0.5
+
+    # Create masks based on threshold
+    invert_mask = perlin_map > threshold
+    shift_mask = ~invert_mask
+
+    # Invert bits where invert_mask is True
+    image_np[invert_mask] = 255 - image_np[invert_mask]
+
+    # Calculate shift amounts where shift_mask is True
+    shift_amounts = (perlin_map * 50).astype(np.int16)  # Ensure enough range
+
+    # Expand shift_amounts to match RGB channels
+    shift_amounts_expanded = np.stack([shift_amounts]*3, axis=2)
+
+    # Apply shift
+    image_np = np.where(
+        shift_mask[..., np.newaxis],
+        np.clip(image_np.astype(np.int16) + shift_amounts_expanded, 0, 255).astype(np.uint8),
+        image_np
+    )
+
+    manipulated_image = Image.fromarray(image_np)
     return manipulated_image
 
 def glitch_image(image, max_thickness=10):
@@ -1242,14 +1322,15 @@ def hsv_to_rgb(h, s, v):
     r, g, b = int(r_norm * 255), int(g_norm * 255), int(b_norm * 255)
     return (r, g, b)
 
-def color_shift_expansion(image, num_points=5, shift_amount=5, expansion_type='square'):
+def color_shift_expansion(image, num_points=5, shift_amount=5, expansion_type='square', mode='xtreme'):
     """
     Expands color shifts from seed points across the image, shifting the existing pixel colors.
 
     :param image: The PIL Image to process.
     :param num_points: Number of seed points to generate.
-    :param shift_amount: Amount to shift the hue per pixel distance.
+    :param shift_amount: Amount to shift the hue per unit distance.
     :param expansion_type: Type of expansion ('square', 'cross', 'circular').
+    :param mode: 'classic' or 'xtreme' mode.
     :return: The processed image.
     """
     import heapq
@@ -1267,46 +1348,40 @@ def color_shift_expansion(image, num_points=5, shift_amount=5, expansion_type='s
             image_hsv[y, x] = [h * 360, s, v]
 
     # Initialize assigned pixels mask
-    assigned = np.zeros((height, width), dtype=bool)
+    assigned = np.full((height, width), False, dtype=bool)
 
     # Generate seed points
     xs = np.random.randint(0, width, size=num_points)
     ys = np.random.randint(0, height, size=num_points)
     seed_points = list(zip(xs, ys))
 
-    # For each seed point, store shift direction and initialize queue
-    seed_info = []
-    for idx, (x0, y0) in enumerate(seed_points):
-        shift_direction = random.choice(['add', 'subtract'])
-        seed_info.append({
-            'position': (x0, y0),
-            'shift_direction': shift_direction,
-            'queue': [],
-            'distance_map': np.full((height, width), np.inf),
-        })
-        # Mark the seed point as assigned
-        assigned[y0, x0] = True
-        # Distance from seed point to itself is 0
-        seed_info[idx]['distance_map'][y0, x0] = 0
-        # Enqueue the seed point with priority (distance)
-        if expansion_type == 'circular':
-            heapq.heappush(seed_info[idx]['queue'], (0, x0, y0))
-        else:
-            seed_info[idx]['queue'].append((x0, y0))
+    # Initialize distance map with infinity
+    distance_map = np.full((height, width), np.inf)
+    # Initialize shift direction map
+    shift_direction_map = np.full((height, width), '', dtype=object)
+    # Create a queue for BFS
+    queue = []
 
-    # Define neighbor offsets based on expansion_type
+    for idx, (x0, y0) in enumerate(seed_points):
+        # Randomly choose shift direction for each seed point
+        shift_direction = random.choice(['add', 'subtract'])
+        # Initialize seed point
+        assigned[y0, x0] = True
+        distance_map[y0, x0] = 0
+        shift_direction_map[y0, x0] = shift_direction
+        # Enqueue the seed point
+        heapq.heappush(queue, (0, x0, y0))
+
+    # Define neighbor offsets
     if expansion_type == 'square':
-        # 8-connected neighbors
         neighbor_offsets = [(-1, -1), (-1, 0), (-1, 1),
                             (0, -1),          (0, 1),
                             (1, -1),  (1, 0), (1, 1)]
     elif expansion_type == 'cross':
-        # 4-connected neighbors
         neighbor_offsets = [(-1, 0),
                             (0, -1),        (0, 1),
                             (1, 0)]
     elif expansion_type == 'circular':
-        # All possible neighbors, but distance will determine expansion
         neighbor_offsets = [(-1, -1), (-1, 0), (-1, 1),
                             (0, -1),          (0, 1),
                             (1, -1),  (1, 0), (1, 1)]
@@ -1316,50 +1391,39 @@ def color_shift_expansion(image, num_points=5, shift_amount=5, expansion_type='s
                             (0, -1),          (0, 1),
                             (1, -1),  (1, 0), (1, 1)]
 
-    # Continue expansion until all pixels are assigned
-    while any(info['queue'] for info in seed_info):
-        for info in seed_info:
-            queue = info['queue']
-            if not queue:
-                continue  # No more pixels to process for this seed point
+    # Perform BFS
+    while queue:
+        current_distance, x, y = heapq.heappop(queue)
+        current_distance = distance_map[y, x]
+        shift_direction = shift_direction_map[y, x]
 
-            if expansion_type == 'circular':
-                # Pop the pixel with the smallest distance
-                current_distance, x, y = heapq.heappop(queue)
-            else:
-                x, y = queue.pop(0)
-                current_distance = info['distance_map'][y, x]
-
-            # Expand to neighbors
-            for dx, dy in neighbor_offsets:
-                nx, ny = x + dx, y + dy
-                if 0 <= nx < width and 0 <= ny < height and not assigned[ny, nx]:
+        for dx, dy in neighbor_offsets:
+            nx, ny = x + dx, y + dy
+            if 0 <= nx < width and 0 <= ny < height:
+                new_distance = current_distance + np.hypot(dx, dy) if expansion_type == 'circular' else current_distance + 1
+                if not assigned[ny, nx] or new_distance < distance_map[ny, nx]:
                     assigned[ny, nx] = True
-                    # Calculate Euclidean distance from seed point
-                    if expansion_type == 'circular':
-                        x0, y0 = info['position']
-                        new_distance = np.hypot(nx - x0, ny - y0)
-                    else:
-                        new_distance = current_distance + 1
-                    info['distance_map'][ny, nx] = new_distance
-                    # Get existing pixel's HSV
-                    existing_h, existing_s, existing_v = image_hsv[ny, nx]
-                    # Calculate hue shift
-                    hue_shift = shift_amount * new_distance
-                    # Shift existing hue
-                    if info['shift_direction'] == 'add':
-                        new_hue = (existing_h + hue_shift) % 360
-                    else:
-                        new_hue = (existing_h - hue_shift) % 360
-                    # Update HSV value
-                    image_hsv[ny, nx] = [new_hue, existing_s, existing_v]
-                    # Enqueue the neighbor
-                    if expansion_type == 'circular':
-                        heapq.heappush(queue, (new_distance, nx, ny))
-                    else:
-                        queue.append((nx, ny))
+                    distance_map[ny, nx] = new_distance
+                    shift_direction_map[ny, nx] = shift_direction
+                    heapq.heappush(queue, (new_distance, nx, ny))
 
-    # Convert the modified HSV image back to RGB
+    # Apply hue shifts
+    for y in range(height):
+        for x in range(width):
+            existing_h, existing_s, existing_v = image_hsv[y, x]
+            shift_direction = shift_direction_map[y, x]
+            distance = distance_map[y, x]
+            if mode == 'xtreme':
+                hue_shift = shift_amount * distance
+            else:  # classic
+                hue_shift = shift_amount
+            if shift_direction == 'add':
+                new_hue = (existing_h + hue_shift) % 360
+            else:
+                new_hue = (existing_h - hue_shift) % 360
+            image_hsv[y, x] = [new_hue, existing_s, existing_v]
+
+    # Convert back to RGB
     for y in range(height):
         for x in range(width):
             h, s, v = image_hsv[y, x]
@@ -1367,7 +1431,7 @@ def color_shift_expansion(image, num_points=5, shift_amount=5, expansion_type='s
             image_np[y, x] = [int(r * 255), int(g * 255), int(b * 255)]
 
     # Convert back to PIL Image
-    processed_image = Image.fromarray(image_np)
+    processed_image = Image.fromarray(image_np.astype(np.uint8))
     return processed_image
 
 def perlin_noise_displacement(image, scale=100, intensity=30, octaves=6, persistence=0.5, lacunarity=2.0):
